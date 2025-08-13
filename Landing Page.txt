@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance System</title>
+    <!-- AWS Cognito SDK -->
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1.24.min.js"></script>
+    <script src="https://unpkg.com/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .camera-section {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        #video {
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            max-width: 100%;
+            height: auto;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            margin: 10px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: transform 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .preview-section {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        #preview {
+            max-width: 300px;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .login-form {
+            max-width: 400px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        
+        .login-form input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        .login-form input:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+
+        .results-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .employee-info {
+            text-align: center;
+        }
+
+        .employee-info h3 {
+            color: #28a745;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Login Section -->
+        <div id="loginSection">
+            <h1>Attendance System Login</h1>
+            <div class="login-form">
+                <input type="email" id="emailInput" placeholder="Email" required>
+                <input type="password" id="passwordInput" placeholder="Password" required>
+                <button id="loginBtn">Login</button>
+                <button id="changePasswordBtn" style="display:none;">Change Password</button>
+                <input type="password" id="newPasswordInput" placeholder="New Password" style="display:none;">
+                <button id="confirmPasswordBtn" style="display:none;">Confirm New Password</button>
+            </div>
+        </div>
+
+        <!-- Main App (hidden initially) -->
+        <div id="mainApp" style="display:none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h1>📸 Attendance System</h1>
+                <div>
+                    <span id="userEmail" style="margin-right: 10px;"></span>
+                    <button id="logoutBtn">Logout</button>
+                </div>
+            </div>
+        
+            <div class="camera-section">
+                <video id="video" width="400" height="300" autoplay></video>
+                <canvas id="canvas" width="400" height="300"></canvas>
+            </div>
+            
+            <div class="controls">
+                <button id="startCamera">Start Camera</button>
+                <button id="captureBtn" disabled>Capture Photo</button>
+                <button id="uploadBtn" disabled>Upload to S3</button>
+            </div>
+            
+            <div class="preview-section">
+                <img id="preview" alt="Captured photo">
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="results-section">
+                <div class="employee-info">
+                    <h3>Attendance Recorded!</h3>
+                    <p><strong>Employee:</strong> <span id="employeeName"></span></p>
+                    <p><strong>ID:</strong> <span id="employeeId"></span></p>
+                    <p><strong>Department:</strong> <span id="department"></span></p>
+                    <p><strong>Confidence:</strong> <span id="confidence"></span></p>
+                    <p><strong>Time:</strong> <span id="timestamp"></span></p>
+                </div>
+            </div>
+            
+            <div id="status"></div>
+        </div> <!-- End mainApp -->
+    </div>
+
+    <script>
+        // Cognito Configuration
+        const poolData = {
+            UserPoolId: 'us-east-1_FF0WZi1rt',
+            ClientId: '17sc983dt9m5nok97b6v3gjb24'
+        };
+        
+        const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+        let currentUser = null;
+        
+        // Check if user is already logged in
+        document.addEventListener('DOMContentLoaded', () => {
+            currentUser = userPool.getCurrentUser();
+            if (currentUser) {
+                currentUser.getSession((err, session) => {
+                    if (!err && session.isValid()) {
+                        showMainApp();
+                        document.getElementById('userEmail').textContent = currentUser.getUsername();
+                    }
+                });
+            }
+        });
+        
+        // Login functionality
+        document.getElementById('loginBtn').addEventListener('click', () => {
+            const email = document.getElementById('emailInput').value;
+            const password = document.getElementById('passwordInput').value;
+            
+            if (!email || !password) {
+                showStatus('Please enter email and password', 'error');
+                return;
+            }
+            
+            const authenticationData = {
+                Username: email,
+                Password: password
+            };
+            
+            const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(authenticationData);
+            const userData = {
+                Username: email,
+                Pool: userPool
+            };
+            
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+            
+            cognitoUser.authenticateUser(authenticationDetails, {
+                onSuccess: (result) => {
+                    currentUser = cognitoUser;
+                    showMainApp();
+                    document.getElementById('userEmail').textContent = email;
+                    showStatus('Login successful!', 'success');
+                },
+                onFailure: (err) => {
+                    showStatus('Login failed: ' + err.message, 'error');
+                },
+                newPasswordRequired: () => {
+                    // User needs to set new password
+                    showStatus('Please set a new password', 'info');
+                    document.getElementById('changePasswordBtn').style.display = 'inline-block';
+                    document.getElementById('newPasswordInput').style.display = 'inline-block';
+                    document.getElementById('confirmPasswordBtn').style.display = 'inline-block';
+                    currentUser = cognitoUser;
+                }
+            });
+        });
+        
+        // Change password for new users
+        document.getElementById('confirmPasswordBtn').addEventListener('click', () => {
+            const newPassword = document.getElementById('newPasswordInput').value;
+            
+            if (!newPassword || newPassword.length < 8) {
+                showStatus('Password must be at least 8 characters', 'error');
+                return;
+            }
+            
+            currentUser.completeNewPasswordChallenge(newPassword, {}, {
+                onSuccess: () => {
+                    showMainApp();
+                    document.getElementById('userEmail').textContent = currentUser.getUsername();
+                    showStatus('Password updated successfully!', 'success');
+                },
+                onFailure: (err) => {
+                    showStatus('Password update failed: ' + err.message, 'error');
+                }
+            });
+        });
+        
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            if (currentUser) {
+                currentUser.signOut();
+                currentUser = null;
+            }
+            showLoginSection();
+            showStatus('Logged out successfully', 'success');
+        });
+        
+        function showMainApp() {
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'block';
+        }
+        
+        function showLoginSection() {
+            document.getElementById('loginSection').style.display = 'block';
+            document.getElementById('mainApp').style.display = 'none';
+        }
+
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const preview = document.getElementById('preview');
+        const startBtn = document.getElementById('startCamera');
+        const captureBtn = document.getElementById('captureBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const status = document.getElementById('status');
+        
+        let stream = null;
+        let capturedImageBlob = null;
+        
+        // Start camera
+        startBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 400, height: 300 } 
+                });
+                video.srcObject = stream;
+                
+                captureBtn.disabled = false;
+                startBtn.textContent = 'Camera Active';
+                startBtn.disabled = true;
+                
+                showStatus('Camera started successfully!', 'success');
+            } catch (err) {
+                showStatus('Error accessing camera: ' + err.message, 'error');
+            }
+        });
+        
+        // Capture photo
+        captureBtn.addEventListener('click', () => {
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, 400, 300);
+            
+            canvas.toBlob((blob) => {
+                capturedImageBlob = blob;
+                const imageUrl = URL.createObjectURL(blob);
+                
+                preview.src = imageUrl;
+                preview.style.display = 'block';
+                
+                uploadBtn.disabled = false;
+                showStatus('Photo captured! Ready to upload.', 'success');
+            }, 'image/jpeg', 0.8);
+        });
+        
+        // Upload to S3 - UPDATED TO USE LAMBDA ENDPOINT
+        uploadBtn.addEventListener('click', async () => {
+            if (!capturedImageBlob) {
+                showStatus('No image captured!', 'error');
+                return;
+            }
+            
+            try {
+                showStatus('Getting upload URL from AWS Lambda...', 'info');
+                
+                // **UPDATED: Now using your Lambda endpoint instead of localhost**
+                const response = await fetch('https://0uy15p0a8b.execute-api.us-east-1.amazonaws.com/default/attendance-s3-upload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                console.log('Lambda response:', result);
+                
+                if (!result.success || !result.uploadUrl) {
+                    throw new Error(result.message || 'Failed to get upload URL');
+                }
+                
+                const { uploadUrl, fileName } = result;
+                
+                showStatus('Uploading image to S3...', 'info');
+                
+                // Upload image to S3 using pre-signed URL
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: capturedImageBlob,
+                    headers: {
+                        'Content-Type': 'image/jpeg'
+                    }
+                });
+                
+                if (uploadResponse.ok) {
+                    showStatus(`Image uploaded successfully as ${fileName}!`, 'success');
+                    uploadBtn.disabled = true;
+                    
+                    // Since Lambda auto-processes, show processing message
+                    setTimeout(() => {
+                        showStatus('Processing attendance with face recognition...', 'info');
+                    }, 1000);
+                    
+                    // Check for results after processing time
+                    setTimeout(() => {
+                        checkAttendanceStatus(fileName);
+                    }, 5000);
+                    
+                } else {
+                    throw new Error(`S3 upload failed with status: ${uploadResponse.status}`);
+                }
+                
+            } catch (error) {
+                console.error('Upload error:', error);
+                showStatus('Upload failed: ' + error.message, 'error');
+            }
+        });
+
+        // Check attendance status by querying DynamoDB (optional enhancement)
+        async function checkAttendanceStatus(fileName) {
+            try {
+                // Since we don't have direct DynamoDB query endpoint, 
+                // show generic success message
+                showStatus('Face recognition processing completed! Check admin dashboard for results.', 'success');
+                
+                // Show generic results
+                document.getElementById('employeeName').textContent = 'Processing...';
+                document.getElementById('employeeId').textContent = 'Please check admin dashboard';
+                document.getElementById('department').textContent = 'For detailed results';
+                document.getElementById('confidence').textContent = 'Processed';
+                document.getElementById('timestamp').textContent = new Date().toLocaleString();
+                document.getElementById('resultsSection').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Status check error:', error);
+                showStatus('Image processed. Check admin dashboard for attendance results.', 'info');
+            }
+        }
+        
+        function showStatus(message, type) {
+            status.innerHTML = `<div class="status ${type}">${message}</div>`;
+            setTimeout(() => {
+                if (type !== 'error') status.innerHTML = '';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

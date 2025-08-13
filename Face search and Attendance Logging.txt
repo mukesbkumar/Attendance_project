@@ -1,0 +1,50 @@
+import boto3
+from decimal import Decimal
+from datetime import datetime
+
+rekognition = boto3.client('rekognition')
+dynamodb = boto3.resource('dynamodb')
+attendance_table = dynamodb.Table('attendance')
+
+COLLECTION_ID = 'attendance-collection'
+
+def lambda_handler(event, context):
+    # Extract S3 bucket and object key from event
+    record = event['Records'][0]
+    bucket = record['s3']['bucket']['name']
+    key = record['s3']['object']['key']
+
+    # Process only captures folder images
+    if not key.startswith("captures/"):
+        print("Ignoring non-capture image:", key)
+        return
+
+    # Search for face match in Rekognition collection
+    response = rekognition.search_faces_by_image(
+        CollectionId=COLLECTION_ID,
+        Image={'S3Object': {'Bucket': bucket, 'Name': key}},
+        FaceMatchThreshold=80,
+        MaxFaces=1
+    )
+
+    print("Rekognition response:", response)
+
+    if response['FaceMatches']:
+        match = response['FaceMatches'][0]
+        employee_id = match['Face']['ExternalImageId']
+        confidence = Decimal(str(match['Similarity']))  # Convert float to Decimal
+        timestamp = datetime.utcnow().isoformat()
+
+        try:
+            attendance_table.put_item(
+                Item={
+                    'EmployeeID': employee_id,
+                    'TimeStamp': timestamp,
+                    'Confidence': confidence
+                }
+            )
+            print(f"Attendance recorded for {employee_id} at {timestamp} with confidence {confidence}")
+        except Exception as e:
+            print(f"Error writing attendance to DynamoDB: {e}")
+    else:
+        print(f"No face match found for image: {key}")

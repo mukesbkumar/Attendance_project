@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Attendance System</title>
+    <!-- AWS SDK -->
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1.24.min.js"></script>
+    <script src="https://unpkg.com/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #f0f0f0;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 14px;
+        }
+
+        .user-info span {
+            background: #f8f9fa;
+            padding: 8px 15px;
+            border-radius: 20px;
+            color: #333;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
+        }
+
+        .stat-card:hover::before {
+            left: 100%;
+        }
+
+        .stat-number {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+            font-weight: 500;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-section {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-left: auto;
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 10px;
+            flex-wrap: wrap;
+        }
+
+        .filter-section label {
+            font-size: 12px;
+            color: #666;
+            font-weight: 600;
+        }
+
+        .filter-section input {
+            padding: 8px 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .filter-section input:focus {
+            border-color: #667eea;
+            outline: none;
+        }
+
+        button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #adb5bd;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .export-btn {
+            background: linear-gradient(45deg, #28a745, #20c997);
+        }
+
+        .export-btn:hover {
+            box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
+        }
+
+        .danger-btn {
+            background: linear-gradient(45deg, #dc3545, #c82333);
+        }
+
+        .attendance-table {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1000px;
+        }
+
+        th {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 18px 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 15px;
+            border-bottom: 1px solid #f1f3f4;
+            vertical-align: middle;
+            font-size: 14px;
+        }
+
+        tr:hover {
+            background: linear-gradient(90deg, #f8f9ff, #ffffff);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        .employee-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .employee-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .employee-details {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .employee-id {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .employee-email {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .confidence-badge {
+            background: #28a745;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .confidence-badge::before {
+            content: '✓';
+        }
+
+        .confidence-badge.medium {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .confidence-badge.medium::before {
+            content: '⚠';
+        }
+
+        .confidence-badge.low {
+            background: #dc3545;
+        }
+
+        .confidence-badge.low::before {
+            content: '!';
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+            font-size: 16px;
+        }
+
+        .loading::before {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .status {
+            padding: 15px 20px;
+            margin: 15px 0;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: 600;
+            border: none;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .success { 
+            background: linear-gradient(45deg, #d4edda, #c3e6cb); 
+            color: #155724; 
+        }
+
+        .error { 
+            background: linear-gradient(45deg, #f8d7da, #f5c6cb); 
+            color: #721c24; 
+        }
+
+        .info { 
+            background: linear-gradient(45deg, #d1ecf1, #bee5eb); 
+            color: #0c5460; 
+        }
+
+        .login-section {
+            text-align: center;
+            max-width: 450px;
+            margin: 50px auto;
+            background: white;
+            padding: 50px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .login-section h1 {
+            margin-bottom: 30px;
+            color: #333;
+            font-size: 28px;
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .login-form input {
+            width: 100%;
+            padding: 15px 20px;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .login-form input:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .login-form button {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            border-radius: 12px;
+        }
+
+        .table-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 30px;
+        }
+
+        .pagination button {
+            padding: 10px 15px;
+            font-size: 14px;
+            min-width: 45px;
+            border-radius: 10px;
+        }
+
+        .image-preview {
+            width: 60px;
+            height: 60px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 3px solid #e9ecef;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .image-preview:hover {
+            border-color: #667eea;
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            max-width: 90vw;
+            max-height: 90vh;
+            animation: zoomIn 0.3s ease;
+        }
+
+        @keyframes zoomIn {
+            from { transform: translate(-50%, -50%) scale(0.8); }
+            to { transform: translate(-50%, -50%) scale(1); }
+        }
+
+        .modal img {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        .close {
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s ease;
+        }
+
+        .close:hover {
+            color: #667eea;
+        }
+
+        .password-change-form {
+            background: #fff3cd;
+            border: 2px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .password-change-form input {
+            width: 100%;
+            max-width: 300px;
+            margin: 10px 0;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+        }
+
+        .s3-key {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: #666;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .department-badge {
+            background: #6c757d;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .department-badge.engineering { background: #007bff; }
+        .department-badge.hr { background: #28a745; }
+        .department-badge.finance { background: #ffc107; color: #000; }
+        .department-badge.marketing { background: #dc3545; }
+
+        @media (max-width: 768px) {
+            .dashboard-container {
+                margin: 10px;
+                padding: 20px;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .filter-section {
+                margin-left: 0;
+                justify-content: center;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 15px;
+            }
+            
+            .stat-number {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Section -->
+    <div id="loginSection" class="login-section">
+        <h1>Admin Dashboard</h1>
+        <div class="login-form">
+            <input type="email" id="emailInput" placeholder="Admin Email" required>
+            <input type="password" id="passwordInput" placeholder="Password" required>
+            <button id="loginBtn">Login</button>
+            
+            <!-- Password Change Form (Hidden initially) -->
+            <div id="passwordChangeForm" class="password-change-form" style="display: none;">
+                <h3>Set New Password</h3>
+                <p>Please set a new password for your account:</p>
+                <input type="password" id="newPasswordInput" placeholder="New Password (min 8 characters)" required>
+                <button id="confirmPasswordBtn">Set Password</button>
+            </div>
+        </div>
+        <div id="loginStatus"></div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" style="display: none;">
+        <div class="dashboard-container">
+            <div class="header">
+                <h1>Admin Dashboard</h1>
+                <div class="user-info">
+                    <span id="adminEmail"></span>
+                    <button id="logoutBtn">Logout</button>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number" id="totalEmployees">0</div>
+                    <div class="stat-label">Total Employees</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="todayAttendance">0</div>
+                    <div class="stat-label">Today's Attendance</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="totalRecords">0</div>
+                    <div class="stat-label">Total Records</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="avgConfidence">0%</div>
+                    <div class="stat-label">Avg Confidence</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="loadAllBtn">Load All Records</button>
+                <button id="todayOnlyBtn">Today Only</button>
+                <button id="refreshBtn">Refresh</button>
+                <button id="exportBtn" class="export-btn"Export CSV</button>
+                
+                <div class="filter-section">
+                    <label>Employee ID:</label>
+                    <input type="text" id="employeeFilter" placeholder="Filter by ID">
+                    <label>Date:</label>
+                    <input type="date" id="dateFilter">
+                    <button id="applyFilterBtn">Apply</button>
+                    <button id="clearFilterBtn">Clear</button>
+                </div>
+            </div>
+
+            <div class="table-info">
+                <span id="recordCount">Click "Load All Records" to view attendance data</span>
+                <span id="lastUpdated"></span>
+            </div>
+
+            <div class="attendance-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Employee</th>
+                            <th>Name & Department</th>
+                            <th>Date & Time</th>
+                            <th>Confidence</th>
+                            <th>Image</th>
+                            <th>S3 Reference</th>
+                        </tr>
+                    </thead>
+                    <tbody id="attendanceTableBody">
+                        <tr>
+                            <td colspan="6" class="loading">Ready to load attendance data</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="pagination" style="display: none;">
+                <button id="prevPage">← Previous</button>
+                <span id="pageInfo">Page 1 of 1</span>
+                <button id="nextPage">Next →</button>
+            </div>
+
+            <div id="dashboardStatus"></div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="modal">
+        <span class="close">&times;</span>
+        <div class="modal-content">
+            <img id="modalImage" alt="Attendance Image">
+        </div>
+    </div>
+
+    <script>
+        // AWS Configuration
+        AWS.config.region = 'us-east-1';
+        
+        // Cognito Configuration
+        const poolData = {
+            UserPoolId: 'us-east-1_FF0WZi1rt',
+            ClientId: '17sc983dt9m5nok97b6v3gjb24'
+        };
+        
+        const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+        let currentUser = null;
+        let dynamoDb = null;
+        let s3 = null;
+        let employees = {};
+        let allAttendanceRecords = [];
+        let filteredRecords = [];
+        let currentPage = 1;
+        const recordsPerPage = 25;
+
+        // Check if user is already logged in
+        document.addEventListener('DOMContentLoaded', () => {
+            currentUser = userPool.getCurrentUser();
+            if (currentUser) {
+                currentUser.getSession((err, session) => {
+                    if (!err && session.isValid()) {
+                        showDashboard();
+                        document.getElementById('adminEmail').textContent = currentUser.getUsername();
+                        setupAWS(session);
+                    }
+                });
+            }
+
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Login
+            document.getElementById('loginBtn').addEventListener('click', handleLogin);
+            document.getElementById('passwordInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') handleLogin();
+            });
+
+            // Password change
+            document.getElementById('confirmPasswordBtn').addEventListener('click', handlePasswordChange);
+
+            // Logout
+            document.getElementById('logoutBtn').addEventListener('click', handleLogout);
+
+            // Data loading
+            document.getElementById('loadAllBtn').addEventListener('click', () => loadAttendanceRecords());
+            document.getElementById('todayOnlyBtn').addEventListener('click', () => loadAttendanceRecords(true));
+            document.getElementById('refreshBtn').addEventListener('click', () => {
+                loadEmployees();
+                loadAttendanceRecords();
+            });
+
+            // Filtering
+            document.getElementById('applyFilterBtn').addEventListener('click', applyFilters);
+            document.getElementById('clearFilterBtn').addEventListener('click', clearFilters);
+
+            // Export
+            document.getElementById('exportBtn').addEventListener('click', exportToCSV);
+
+            // Pagination
+            document.getElementById('prevPage').addEventListener('click', () => changePage(-1));
+            document.getElementById('nextPage').addEventListener('click', () => changePage(1));
+
+            // Modal
+            document.getElementById('imageModal').addEventListener('click', (e) => {
+                if (e.target === document.getElementById('imageModal')) closeModal();
+            });
+            document.querySelector('.close').addEventListener('click', closeModal);
+        }
+
+        function handleLogin() {
+            const email = document.getElementById('emailInput').value;
+            const password = document.getElementById('passwordInput').value;
+            
+            if (!email || !password) {
+                showLoginStatus('Please enter email and password', 'error');
+                return;
+            }
+            
+            showLoginStatus('Logging in...', 'info');
+            
+            const authenticationData = { Username: email, Password: password };
+            const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(authenticationData);
+            const userData = { Username: email, Pool: userPool };
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+            
+            cognitoUser.authenticateUser(authenticationDetails, {
+                onSuccess: (result) => {
+                    currentUser = cognitoUser;
+                    showDashboard();
+                    document.getElementById('adminEmail').textContent = email;
+                    setupAWS(result);
+                    showDashboardStatus('Login successful! Welcome to the admin dashboard.', 'success');
+                },
+                onFailure: (err) => {
+                    console.error('Login error:', err);
+                    showLoginStatus(`Login failed: ${err.message}`, 'error');
+                },
+                newPasswordRequired: (userAttributes, requiredAttributes) => {
+                    // Store the user for password change
+                    currentUser = cognitoUser;
+                    document.getElementById('passwordChangeForm').style.display = 'block';
+                    showLoginStatus('Please set a new password for your account', 'info');
+                }
+            });
+        }
+
+        function handlePasswordChange() {
+            const newPassword = document.getElementById('newPasswordInput').value;
+            
+            if (!newPassword || newPassword.length < 8) {
+                showLoginStatus('Password must be at least 8 characters long', 'error');
+                return;
+            }
+            
+            showLoginStatus('Setting new password...', 'info');
+            
+            currentUser.completeNewPasswordChallenge(newPassword, {}, {
+                onSuccess: (result) => {
+                    showDashboard();
+                    document.getElementById('adminEmail').textContent = currentUser.getUsername();
+                    setupAWS(result);
+                    showDashboardStatus('Password updated successfully! Welcome to the admin dashboard.', 'success');
+                },
+                onFailure: (err) => {
+                    console.error('Password change error:', err);
+                    showLoginStatus(`Password update failed: ${err.message}`, 'error');
+                }
+            });
+        }
+
+        function handleLogout() {
+            if (currentUser) {
+                currentUser.signOut();
+                currentUser = null;
+            }
+            showLoginSection();
+            // Reset form
+            document.getElementById('passwordChangeForm').style.display = 'none';
+            document.getElementById('emailInput').value = '';
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('newPasswordInput').value = '';
+        }
+
+        function setupAWS(session) {
+            const idToken = session.getIdToken().getJwtToken();
+            
+            AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+                IdentityPoolId: 'us-east-1:e64d8630-6be6-4a08-9fb1-7e2064cecb19',
+                Logins: {
+                    'cognito-idp.us-east-1.amazonaws.com/us-east-1_FF0WZi1rt': idToken
+                }
+            });
+            
+            AWS.config.credentials.refresh((error) => {
+                if (error) {
+                    console.error('AWS credentials error:', error);
+                    showDashboardStatus('AWS credentials setup failed. Some features may not work.', 'error');
+                } else {
+                    dynamoDb = new AWS.DynamoDB.DocumentClient();
+                    s3 = new AWS.S3();
+                    loadEmployees();
+                    showDashboardStatus('🔗 Connected to AWS services successfully!', 'success');
+                }
+            });
+        }
+
+        async function loadEmployees() {
+            try {
+                showDashboardStatus('Loading employee database...', 'info');
+                
+                const params = { TableName: 'employees' };
+                const result = await dynamoDb.scan(params).promise();
+                
+                employees = {};
+                result.Items.forEach(item => {
+                    employees[item.EmployeeID] = {
+                        Name: item.Names || item.Name || 'Unknown Employee',
+                        Department: item.Departments || item.Department || 'Unknown',
+                        Email: item.email || item.Email || 'unknown@company.com'
+                    };
+                });
+                
+                document.getElementById('totalEmployees').textContent = Object.keys(employees).length;
+                showDashboardStatus(`Loaded ${Object.keys(employees).length} employees from database`, 'success');
+                
+            } catch (error) {
+                console.error('Error loading employees:', error);
+                showDashboardStatus('Using sample employee data (database connection failed)', 'info');
+                
+                // Fallback data
+                employees = {
+                    'E201': { Name: 'Kshitij', Department: 'Engineering', Email: 'kshitij@company.com' },
+                    'E202': { Name: 'Mukesh', Department: 'Engineering', Email: 'mukesh@company.com' },
+                    'E203': { Name: 'Nikhil', Department: 'Engineering', Email: 'nikhil@company.com' },
+                    'E204': { Name: 'Shreyas', Department: 'Engineering', Email: 'shreyas@company.com' }
+                };
+                document.getElementById('totalEmployees').textContent = Object.keys(employees).length;
+            }
+        }
+
+        function loadAttendanceRecords(todayOnly = false) {
+            const tbody = document.getElementById('attendanceTableBody');
+            tbody.innerHTML = '<tr><td colspan="6" class="loading">Loading attendance records...</td></tr>';
+            
+            if (!dynamoDb) {
+                tbody.innerHTML = '<tr><td colspan="6" class="loading">Database connection not ready. Please refresh the page.</td></tr>';
+                return;
+            }
+            
+            showDashboardStatus('📋 Loading attendance records from database...', 'info');
+            
+            const params = { TableName: 'attendance' };
+            
+            if (todayOnly) {
+                const today = new Date().toISOString().split('T')[0];
+                params.FilterExpression = 'begins_with(#ts, :today)';
+                params.ExpressionAttributeNames = { '#ts': 'TimeStamp' };
+                params.ExpressionAttributeValues = { ':today': today };
+            }
+            
+            dynamoDb.scan(params, (err, data) => {
+                if (err) {
+                    console.error('Error loading attendance:', err);
+                    tbody.innerHTML = '<tr><td colspan="6" class="loading">Failed to load attendance records</t
